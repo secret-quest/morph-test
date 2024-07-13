@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CrypticAscent Web3 Test</title>
+    <script src="https://cdn.ethers.io/lib/ethers-5.0.umd.min.js"></script>
+    <script src="https://unpkg.com/@walletconnect/web3-provider@1.7.1/dist/umd/index.min.js"></script>
+    <script src="https://unpkg.com/web3modal@1.9.0/dist/index.js"></script>
+</head>
+<body>
+    <h1>CrypticAscent Web3 Test</h1>
+    <button id="connectWalletBtn">Connect Wallet</button>
+    <button id="createGameBtn" style="display: none;">Create Game</button>
+    <button id="stakeBtn" style="display: none;">Stake to Join Game</button>
+    <div id="status"></div>
+
+    <script>
+        let provider;
+        let signer;
+        let crypticAscentContract;
+        let mockERC20Contract;
+        let currentGameId = null;
+
+        const crypticAscentABI = [
+            {"inputs":[{"internalType":"uint256","name":"_playerCount","type":"uint256"}],"name":"createGame","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
+            {"inputs":[{"internalType":"uint256","name":"_gameId","type":"uint256"}],"name":"stake","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"gameId","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"playerCount","type":"uint256"}],"name":"GameCreated","type":"event"}
+        ];
+
+        const mockERC20ABI = [
+            {"inputs":[{"internalType":"address","name":"spender","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"approve","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"}
+        ];
+
+        const crypticAscentAddress = "0x20A5d42bE852cC29fc1cBd0FF42B34D9AEc6D29d"; // Update with the actual deployed address
+        const mockERC20Address = "0x3a77102a36391C293dD27ce4fB1c4AE80DA9d2A2"; // Update with the actual deployed address
+
+        async function connectWallet() {
+            try {
+                if (typeof window.ethereum !== 'undefined') {
+                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    provider = new ethers.providers.Web3Provider(window.ethereum);
+                    signer = provider.getSigner(accounts[0]);
+                } else {
+                    const web3Modal = new Web3Modal();
+                    const connection = await web3Modal.connect();
+                    provider = new ethers.providers.Web3Provider(connection);
+                    signer = provider.getSigner();
+                }
+
+                crypticAscentContract = new ethers.Contract(crypticAscentAddress, crypticAscentABI, signer);
+                mockERC20Contract = new ethers.Contract(mockERC20Address, mockERC20ABI, signer);
+                
+                const address = await signer.getAddress();
+                document.getElementById('status').innerText = "Wallet connected: " + address;
+                document.getElementById('createGameBtn').style.display = 'inline-block';
+            } catch (error) {
+                document.getElementById('status').innerText = "Failed to connect wallet: " + error.message;
+                console.error("Wallet connection error:", error);
+            }
+        }
+
+        async function createGame() {
+            if (!crypticAscentContract) {
+                document.getElementById('status').innerText = "Wallet not connected";
+                return;
+            }
+
+            try {
+                const tx = await crypticAscentContract.createGame(2);
+                document.getElementById('status').innerText = "Creating game... Transaction hash: " + tx.hash;
+                const receipt = await tx.wait();
+                console.log("Transaction receipt:", receipt);
+
+                const event = receipt.events.find(event => event.event === 'GameCreated');
+                if (event && event.args) {
+                    currentGameId = event.args.gameId.toNumber();
+                    document.getElementById('status').innerText = "New game created with ID: " + currentGameId;
+                    document.getElementById('stakeBtn').style.display = 'inline-block';
+                } else {
+                    const gameId = receipt.events[0].args[0].toNumber();
+                    if (gameId) {
+                        currentGameId = gameId;
+                        document.getElementById('status').innerText = "New game created with ID: " + currentGameId + " (from return value)";
+                        document.getElementById('stakeBtn').style.display = 'inline-block';
+                    } else {
+                        throw new Error("Could not determine the game ID");
+                    }
+                }
+            } catch (error) {
+                document.getElementById('status').innerText = "Failed to create new game: " + error.message;
+                console.error("Game creation error:", error);
+            }
+        }
+
+        async function stakeInGame() {
+            if (!crypticAscentContract) {
+                document.getElementById('status').innerText = "Wallet not connected";
+                return;
+            }
+
+            if (currentGameId === null) {
+                document.getElementById('status').innerText = "No active game to join";
+                return;
+            }
+
+            try {
+                const approvalTx = await mockERC20Contract.approve(crypticAscentAddress, ethers.utils.parseEther("100"));
+                document.getElementById('status').innerText = "Approving token spend... Transaction hash: " + approvalTx.hash;
+                await approvalTx.wait();
+                
+                const tx = await crypticAscentContract.stake(currentGameId);
+                document.getElementById('status').innerText = "Staking in game... Transaction hash: " + tx.hash;
+                await tx.wait();
+                document.getElementById('status').innerText = "Successfully staked in game " + currentGameId;
+            } catch (error) {
+                if (error.code === 'UNPREDICTABLE_GAS_LIMIT') {
+                    document.getElementById('status').innerText = "Failed to stake: Cannot estimate gas; transaction may fail or require manual gas limit.";
+                } else {
+                    document.getElementById('status').innerText = "Failed to stake: " + error.message;
+                }
+                console.error("Staking error:", error);
+            }
+        }
+
+        document.getElementById('connectWalletBtn').addEventListener('click', connectWallet);
+        document.getElementById('createGameBtn').addEventListener('click', createGame);
+        document.getElementById('stakeBtn').addEventListener('click', stakeInGame);
+    </script>
+</body>
+</html>
