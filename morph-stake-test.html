@@ -77,6 +77,7 @@
                 const tx = await crypticAscentContract.createGame(2);
                 document.getElementById('status').innerText = "Creating game... Transaction hash: " + tx.hash;
                 const receipt = await tx.wait();
+                window.open(`https://explorer-holesky.morphl2.io/tx/${tx.hash}`, '_blank');
                 console.log("Transaction receipt:", receipt);
 
                 const event = receipt.events.find(event => event.event === 'GameCreated');
@@ -120,6 +121,7 @@
                 document.getElementById('status').innerText = "Staking in game... Transaction hash: " + tx.hash;
                 await tx.wait();
                 document.getElementById('status').innerText = "Successfully staked in game " + currentGameId;
+                window.open(`https://explorer-holesky.morphl2.io/tx/${tx.hash}`, '_blank');
             } catch (error) {
                 if (error.code === 'UNPREDICTABLE_GAS_LIMIT') {
                     document.getElementById('status').innerText = "Failed to stake: Cannot estimate gas; transaction may fail or require manual gas limit.";
